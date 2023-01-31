@@ -6,6 +6,7 @@ from beaker.application import get_method_signature
 from algosdk.encoding import decode_address, encode_address
 
 from pprint import pprint
+import argparse
 
 Nickname = abi.StaticBytes[Literal[8]]
 Username = abi.StaticBytes[Literal[15]]
@@ -380,6 +381,76 @@ def demo():
 
 
 if __name__ == "__main__":
-    # demo()
-    demo_checker()
-    # regdemo()
+    parser = argparse.ArgumentParser(description="Deploy")
+    parser.add_argument("function", choices=["deploy_registry", "deploy_blog", "init_blog", "tweet", "lastId", "get_tweet"], help="Commands")
+    parser.add_argument("--app_id", type=int, help="App ID")
+    parser.add_argument("--post_id", type=int, help="Post ID")
+    parser.add_argument("--txt", type=str, help="Tweet text")
+    args = parser.parse_args()
+    if args.function == "deploy_registry":
+        app_client = deploy_registry()
+        print("- app_id: ", app_client.app_id)
+    elif args.function == "deploy_blog":
+        app_client = deploy_blog()
+        print("- app_id: ", app_client.app_id)
+
+    elif args.function == 'init_blog':
+        app_client = client.ApplicationClient(
+            client=sandbox.get_algod_client(),
+            app=AlgoBlog(version=8),
+            app_id=args.app_id,
+            # Get acct from sandbox and pass the signer
+            signer=sandbox.get_accounts().pop().signer,
+        )
+        boxen = lambda x: [[app_client.app_id, name] for name in x]
+        result = app_client.call(AlgoBlog.init, boxes=boxen(["username", "nick"]),
+                            nick=_nick(b'tomo'), username=_username(b'tomo'))
+        print("created account: ", result.return_value) 
+        result = app_client.call(AlgoBlog.get_nick, boxes=boxen(["nick"]))
+        print("Confirm nick set: ", result.return_value)
+        result = app_client.call(AlgoBlog.idLast_reset, boxes=boxen(["idLast"]))
+
+    elif args.function == 'lastId':
+        app_client = client.ApplicationClient(
+            client=sandbox.get_algod_client(),
+            app=AlgoBlog(version=8),
+            app_id=args.app_id,
+            # Get acct from sandbox and pass the signer
+            signer=sandbox.get_accounts().pop().signer,
+        )
+        boxen = lambda x: [[app_client.app_id, name] for name in x]
+        # result = app_client.call(AlgoBlog.idLast_reset, boxes=boxen(["idLast"]))
+        result = app_client.call(AlgoBlog.get_idLast, boxes=[[app_client.app_id, "idLast"]])
+        print("updated idLast nonce: ", result.return_value)
+        id = result.return_value.split(':')[1]
+        idNext = int(id) + 1
+        print("next: ", idNext)
+
+    elif args.function == 'tweet':
+        app_client = client.ApplicationClient(
+            client=sandbox.get_algod_client(),
+            app=AlgoBlog(version=8),
+            app_id=args.app_id,
+            # Get acct from sandbox and pass the signer
+            signer=sandbox.get_accounts().pop().signer,
+        )
+        boxen = lambda x: [[app_client.app_id, name] for name in x]
+        result = app_client.call(AlgoBlog.post_tweet, boxes=[[app_client.app_id, "idLast"], [app_client.app_id, "id:" + str(args.post_id)]], tweet=args.txt)
+        print("Resulting id tweet: ", result.return_value)
+    
+    elif args.function == 'get_tweet':
+        app_client = client.ApplicationClient(
+            client=sandbox.get_algod_client(),
+            app=AlgoBlog(version=8),
+            app_id=args.app_id,
+            # Get acct from sandbox and pass the signer
+            signer=sandbox.get_accounts().pop().signer,
+        )
+        boxen = lambda x: [[app_client.app_id, name] for name in x]
+        result = app_client.call(AlgoBlog.get_tweet, boxes=[[app_client.app_id, "idLast"], [app_client.app_id, "id:" + str(args.post_id)]], id=str(args.post_id))
+        print("tweet: ", result.return_value)
+
+    else:
+        # demo()
+        demo_checker()
+        # regdemo()
