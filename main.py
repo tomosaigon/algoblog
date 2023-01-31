@@ -8,6 +8,12 @@ from pprint import pprint
 
 Nickname = abi.StaticBytes[Literal[8]]
 Username = abi.StaticBytes[Literal[15]]
+def _nick(bs):
+    return bs.ljust(8, b'\x00')
+
+def _username(bs):
+    return bs.ljust(15, b'\x00')
+
 MAX_USERS = 20
 
 class UserRecord(abi.NamedTuple):
@@ -92,8 +98,8 @@ def regdemo():
                               boxes=boxen(['user_count', 'usernames']))
     print("bootstrap result: ", result.return_value) 
     # tomo = b"tomo\x00\x00\x00\x00" # 8 byte nickname
-    tomo8 = b'tomo'.ljust(8, b'\x00')
-    tomo15 = b'tomo'.ljust(15, b'\x00')
+    tomo8 = _nick(b'tomo')
+    tomo15 = _username(b'tomo')
     result = app_client.call(AlgoBlogRegistry.register, boxes=boxen(['user_count', 'usernames', tomo8]),
                               nick=tomo8, username=tomo15, app_addr=someaddr, canonical_uri="uri://example")
     print("register result: ", result.return_value) 
@@ -107,9 +113,10 @@ def regdemo():
     print("get_nick_by_idx ", ''.join([chr(x) for x in result.return_value]))
 
     result = app_client.call(AlgoBlogRegistry.register, boxes=boxen(['user_count', 'usernames', b'root1234']),
-                              nick=b'root1234', username=b"root1234".ljust(15, b'\x00'), app_addr=someaddr, canonical_uri="uri://example")
+                              nick=_nick(b'root1234'), username=_username(b"root1234"),
+                              app_addr=someaddr, canonical_uri="uri://example")
     result = app_client.call(AlgoBlogRegistry.register, boxes=boxen(['user_count', 'usernames', b'satoshi ']),
-                              nick=b'satoshi ', username=b"satoshi".ljust(15, b'\x00'), app_addr=someaddr, canonical_uri="uri://example")
+                              nick=b'satoshi ', username=_username(b"satoshi"), app_addr=someaddr, canonical_uri="uri://example")
     result = app_client.call(AlgoBlogRegistry.get_user, boxes=boxen([b'satoshi ']) , nick=b'satoshi ')
     print("get_user: ", result.return_value)
     result = app_client.call(AlgoBlogRegistry.get_nick_by_idx, boxes=boxen(['usernames']) , idx=2)
@@ -132,8 +139,9 @@ from beaker.application import get_method_signature
 # Create a class, subclassing Application from beaker
 class AlgoBlog(Application):
     @external
-    def init(self, username: abi.String, *, output: abi.String):
+    def init(self, nick: Nickname, username: Username, *, output: abi.String):
         return Seq(
+            App.box_put(Bytes("nick"), nick.get()),
             App.box_put(Bytes("username"), username.get()),
             output.set(username.get())
         )
@@ -184,7 +192,7 @@ class AlgoBlog(Application):
         )
 
 def demo():
-    deploy = False
+    deploy = 0
 
     if deploy:
         # Create an Application client
@@ -206,23 +214,25 @@ def demo():
         """
         )
     else:
+        app_addr = 'IKFUUZDNRXCZSVEWGFKEGSNHXBYXFFBMYRQP6X3EOTEAD4L3NHWCSSFKNQ'
         app_client = client.ApplicationClient(
             # Get sandbox algod client
             client=sandbox.get_algod_client(),
             # Instantiate app with the program version (default is MAX_TEAL_VERSION)
             app=AlgoBlog(version=8),
-            app_id=844,
+            app_id=1191,
             # Get acct from sandbox and pass the signer
             signer=sandbox.get_accounts().pop().signer,
         )
 
-
+    boxen = lambda x: [[app_client.app_id, name] for name in x]
     app_client.fund(517000, app_addr) # app_client.fund(108100, app_addr)
 
-    result = app_client.call(AlgoBlog.init, boxes=[[app_client.app_id, "username"]], username="tomo")
+    result = app_client.call(AlgoBlog.init, boxes=boxen(["username", "nick"]),
+                             nick=_nick(b'tomo'), username=_username(b'tomo'))
     print("created account: ", result.return_value) 
 
-    result = app_client.call(AlgoBlog.idLast_reset, boxes=[[app_client.app_id, "idLast"]])
+    result = app_client.call(AlgoBlog.idLast_reset, boxes=boxen(["idLast"]))
     pprint(vars(result))
     # result = app_client.call(AlgoBlog.idLast_inc, boxes=[[app_client.app_id, "idLast"]])
     # pprint(vars(result))
@@ -268,5 +278,5 @@ def demo():
 
 
 if __name__ == "__main__":
-    # demo()
-    regdemo()
+    demo()
+    # regdemo()
