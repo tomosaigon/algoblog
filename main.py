@@ -382,10 +382,13 @@ def demo():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Deploy")
-    parser.add_argument("function", choices=["deploy_registry", "deploy_blog", "init_blog", "tweet", "lastId", "get_tweet"], help="Commands")
-    parser.add_argument("--app_id", type=int, help="App ID")
+    parser.add_argument("function", choices=["deploy_registry", "deploy_blog", "init_blog", "tweet", "lastId", "get_tweet", "register"], help="Commands")
+    parser.add_argument("--app_id", type=int, help="App ID to call")
+    parser.add_argument("--blog_app_id", type=int, help="App ID of AlgoBlog to register") 
     parser.add_argument("--post_id", type=int, help="Post ID")
     parser.add_argument("--txt", type=str, help="Tweet text")
+    parser.add_argument("--nick", type=str, help="Nick (to 8 bytes)")
+    parser.add_argument("--username", type=str, help="Username (to 15 bytes)")
     args = parser.parse_args()
     if args.function == "deploy_registry":
         app_client = deploy_registry()
@@ -411,6 +414,7 @@ if __name__ == "__main__":
         result = app_client.call(AlgoBlog.idLast_reset, boxes=boxen(["idLast"]))
 
     elif args.function == 'lastId':
+        # curl -s http://localhost:4001/v2/applications/1501/box?application-id=1501\&name=str:idLast -H "X-Algo-API-Token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" | jq -r .value | base64 -d | hexdump
         app_client = client.ApplicationClient(
             client=sandbox.get_algod_client(),
             app=AlgoBlog(version=8),
@@ -439,6 +443,7 @@ if __name__ == "__main__":
         print("Resulting id tweet: ", result.return_value)
     
     elif args.function == 'get_tweet':
+        # curl -s http://localhost:4001/v2/applications/1501/box?application-id=1501\&name=str:id:1 -H "X-Algo-API-Token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" | jq -r .value | base64 -d
         app_client = client.ApplicationClient(
             client=sandbox.get_algod_client(),
             app=AlgoBlog(version=8),
@@ -449,6 +454,23 @@ if __name__ == "__main__":
         boxen = lambda x: [[app_client.app_id, name] for name in x]
         result = app_client.call(AlgoBlog.get_tweet, boxes=[[app_client.app_id, "idLast"], [app_client.app_id, "id:" + str(args.post_id)]], id=str(args.post_id))
         print("tweet: ", result.return_value)
+
+    elif args.function == 'register':
+        app_client = client.ApplicationClient(
+            client=sandbox.get_algod_client(),
+            app=AlgoBlogRegistry(version=8),
+            app_id=args.app_id,
+            # Get acct from sandbox and pass the signer
+            signer=sandbox.get_accounts().pop().signer,
+        )
+        boxen = lambda x: [[app_client.app_id, name] for name in x]
+        someaddr = decode_address(app_client.app_addr)
+
+        result = app_client.call(AlgoBlogRegistry.register, 
+                                 boxes=boxen(['user_count', 'usernames', _nick(args.nick.encode('ascii'))]),
+                              app_id=args.blog_app_id,
+                              nick=_nick(args.nick.encode('ascii')), username=_username(args.username.encode('ascii')), app_addr=someaddr, canonical_uri="uri://example")
+        print("register result: ", result.return_value) 
 
     else:
         # demo()
