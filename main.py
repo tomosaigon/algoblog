@@ -4,15 +4,44 @@ from beaker import *
 from beaker.lib.storage import Mapping, List
 from beaker.application import get_method_signature
 from algosdk.encoding import decode_address, encode_address
+from algosdk.v2client import algod
+from algosdk.atomic_transaction_composer import AccountTransactionSigner
+from algosdk import account, mnemonic
 
 from pprint import pprint
 import argparse
 import time
+import os
+
+algod_token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+# urllib.error.URLError: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate
+import ssl 
+ssl._create_default_https_context = ssl._create_unverified_context
 
 Nickname = abi.StaticBytes[Literal[8]]
 Username = abi.StaticBytes[Literal[15]]
 Timestamp = abi.Uint64
 # Timestamp = abi.StaticBytes[Literal[8]]
+
+headers = {}
+if 0:
+    # XXX algoexplorer does not work
+    # testnet, no token: https://testnet.algoexplorer.io/api-dev/v2
+    algod_address = "https://node.testnet.algoexplorerapi.io" # no /v2
+elif 1:
+    algod_address = "https://testnet-algorand.api.purestake.io/ps2"
+    algod_token = os.environ["ALGOD_TOKEN"]
+    headers = { "x-api-key": algod_token }
+    signer = AccountTransactionSigner(mnemonic.to_private_key(os.environ["MNEMONIC"]))
+else:
+    # local sandbox
+    algod_address = "http://localhost:4001"
+    # same as: algod_client = sandbox.get_algod_client(),
+    signer = sandbox.get_accounts().pop().signer
+
+algod_client = algod.AlgodClient(algod_token, algod_address, headers)
+params = algod_client.suggested_params()
 
 def _nick(bs):
     return bs.ljust(8, b'\x00')
@@ -76,9 +105,9 @@ def deploy_registry():
 
     if deploy:
         app_client = client.ApplicationClient(
-            client=sandbox.get_algod_client(),
+            client=algod_client,
             app=AlgoBlogRegistry(version=8),
-            signer=sandbox.get_accounts().pop().signer,
+            signer=signer,
         )
 
         app_id, app_addr, txid = app_client.create()
@@ -92,10 +121,10 @@ def deploy_registry():
         app_addr = 'NCYBSXIYSDOIJ5ZB2A7B7UJXKAWJJN5XRUK5PQ26L3MFS5S6FLVZJR4FOM'
         app_id = 1217
         app_client = client.ApplicationClient(
-            client=sandbox.get_algod_client(),
+            client=algod_client,
             app=AlgoBlogRegistry(version=8),
             app_id=app_id,
-            signer=sandbox.get_accounts().pop().signer,
+            signer=signer,
         )
 
     app_client.fund(517000, app_addr)
@@ -182,11 +211,11 @@ def deploy_checker():
         # Create an Application client
         app_client = client.ApplicationClient(
             # Get sandbox algod client
-            client=sandbox.get_algod_client(),
+            client=algod_client,
             # Instantiate app with the program version (default is MAX_TEAL_VERSION)
             app=Checker(version=8),
             # Get acct from sandbox and pass the signer
-            signer=sandbox.get_accounts().pop().signer,
+            signer=signer,
         )
 
         # Deploy the app on-chain
@@ -201,12 +230,12 @@ def deploy_checker():
         app_addr = 'IKFUUZDNRXCZSVEWGFKEGSNHXBYXFFBMYRQP6X3EOTEAD4L3NHWCSSFKNQ'
         app_client = client.ApplicationClient(
             # Get sandbox algod client
-            client=sandbox.get_algod_client(),
+            client=algod_client,
             # Instantiate app with the program version (default is MAX_TEAL_VERSION)
             app=Checker(version=8),
             app_id=1191,
             # Get acct from sandbox and pass the signer
-            signer=sandbox.get_accounts().pop().signer,
+            signer=signer,
         )
 
     boxen = lambda x: [[app_client.app_id, name] for name in x]
@@ -320,16 +349,14 @@ def deploy_blog():
     deploy = 1
 
     if deploy:
-        # testnet, no token: https://testnet.algoexplorer.io/api-dev/v2
-
         # Create an Application client
         app_client = client.ApplicationClient(
             # Get sandbox algod client
-            client=sandbox.get_algod_client(),
+            client=algod_client,
             # Instantiate app with the program version (default is MAX_TEAL_VERSION)
             app=AlgoBlog(version=8),
             # Get acct from sandbox and pass the signer
-            signer=sandbox.get_accounts().pop().signer,
+            signer=signer,
         )
 
         # Deploy the app on-chain
@@ -344,12 +371,12 @@ def deploy_blog():
         app_addr = 'IKFUUZDNRXCZSVEWGFKEGSNHXBYXFFBMYRQP6X3EOTEAD4L3NHWCSSFKNQ'
         app_client = client.ApplicationClient(
             # Get sandbox algod client
-            client=sandbox.get_algod_client(),
+            client=algod_client,
             # Instantiate app with the program version (default is MAX_TEAL_VERSION)
             app=AlgoBlog(version=8),
             app_id=1191,
             # Get acct from sandbox and pass the signer
-            signer=sandbox.get_accounts().pop().signer,
+            signer=signer,
         )
 
     boxen = lambda x: [[app_client.app_id, name] for name in x]
@@ -432,11 +459,11 @@ if __name__ == "__main__":
 
     elif args.function == 'init_blog':
         app_client = client.ApplicationClient(
-            client=sandbox.get_algod_client(),
+            client=algod_client,
             app=AlgoBlog(version=8),
             app_id=args.app_id,
             # Get acct from sandbox and pass the signer
-            signer=sandbox.get_accounts().pop().signer,
+            signer=signer,
         )
         boxen = lambda x: [[app_client.app_id, name] for name in x]
         result = app_client.call(AlgoBlog.init, boxes=boxen(["username", "nick", "timestamps"]),
@@ -450,11 +477,11 @@ if __name__ == "__main__":
     elif args.function == 'lastId':
         # curl -s http://localhost:4001/v2/applications/1501/box?application-id=1501\&name=str:idLast -H "X-Algo-API-Token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" | jq -r .value | base64 -d | hexdump
         app_client = client.ApplicationClient(
-            client=sandbox.get_algod_client(),
+            client=algod_client,
             app=AlgoBlog(version=8),
             app_id=args.app_id,
             # Get acct from sandbox and pass the signer
-            signer=sandbox.get_accounts().pop().signer,
+            signer=signer,
         )
         boxen = lambda x: [[app_client.app_id, name] for name in x]
         # result = app_client.call(AlgoBlog.idLast_reset, boxes=boxen(["idLast"]))
@@ -469,11 +496,11 @@ if __name__ == "__main__":
         if not args.post_id:
             raise Exception("no post_id")
         app_client = client.ApplicationClient(
-            client=sandbox.get_algod_client(),
+            client=algod_client,
             app=AlgoBlog(version=8),
             app_id=args.app_id,
             # Get acct from sandbox and pass the signer
-            signer=sandbox.get_accounts().pop().signer,
+            signer=signer,
         )
         boxen = lambda x: [[app_client.app_id, name] for name in x]
         result = app_client.call(AlgoBlog.post_tweet, boxes=boxen(["idLast", "id:" + str(args.post_id), "timestamps"]), tweet=args.txt, tstamp=int(time.time())+60)
@@ -484,11 +511,11 @@ if __name__ == "__main__":
     elif args.function == 'get_tweet':
         # curl -s http://localhost:4001/v2/applications/1501/box?application-id=1501\&name=str:id:1 -H "X-Algo-API-Token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" | jq -r .value | base64 -d
         app_client = client.ApplicationClient(
-            client=sandbox.get_algod_client(),
+            client=algod_client,
             app=AlgoBlog(version=8),
             app_id=args.app_id,
             # Get acct from sandbox and pass the signer
-            signer=sandbox.get_accounts().pop().signer,
+            signer=signer,
         )
         boxen = lambda x: [[app_client.app_id, name] for name in x]
         result = app_client.call(AlgoBlog.get_tweet, boxes=[[app_client.app_id, "idLast"], [app_client.app_id, "id:" + str(args.post_id)]], id=str(args.post_id))
@@ -499,11 +526,11 @@ if __name__ == "__main__":
 
     elif args.function == 'register':
         app_client = client.ApplicationClient(
-            client=sandbox.get_algod_client(),
+            client=algod_client,
             app=AlgoBlogRegistry(version=8),
             app_id=args.app_id,
             # Get acct from sandbox and pass the signer
-            signer=sandbox.get_accounts().pop().signer,
+            signer=signer,
         )
         boxen = lambda x: [[app_client.app_id, name] for name in x]
         someaddr = decode_address(app_client.app_addr)
