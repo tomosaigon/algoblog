@@ -5,7 +5,7 @@ import requests
 import ssl
 
 TOKEN = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-APP_ID = 1501
+APP_ID = 1745
 API = 'http://localhost:4001/v2'
 LISTEN = ('0.0.0.0', 4443)
 USESSL = False # Error: self signed certificate
@@ -21,7 +21,6 @@ def get_url_json_value(url):
         "X-Algo-API-Token": TOKEN
     }
     response = requests.get(url, headers=header)
-
     if response.status_code == 200:
         data = response.json()
         # print(data)
@@ -57,7 +56,10 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
         out = b''
         while id <= lastId:
             tweet = get_url_json_value("{}/applications/{}/box?application-id={}&name=str:id:{}".format(API, APP_ID, APP_ID, id))
-            now = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z")
+            tstamps = get_url_json_value("{}/applications/{}/box?application-id={}&name=str:timestamps".format(API, APP_ID, APP_ID))
+            tstamp = int.from_bytes(tstamps[(id-1)*8:id*8], 'big')
+            now = datetime.datetime.fromtimestamp(tstamp).strftime("%Y-%m-%dT%H:%M:%S%z")
+            # now = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z")
             print("debug: tweet#{}: {}".format(id, tweet))
             s = f"{now}\t{tweet.decode('ascii')}\n"
             # self.wfile.write(s.encode()) # gather output to calc content len
