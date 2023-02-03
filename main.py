@@ -7,9 +7,13 @@ from algosdk.encoding import decode_address, encode_address
 
 from pprint import pprint
 import argparse
+import time
 
 Nickname = abi.StaticBytes[Literal[8]]
 Username = abi.StaticBytes[Literal[15]]
+Timestamp = abi.Uint64
+# Timestamp = abi.StaticBytes[Literal[8]]
+
 def _nick(bs):
     return bs.ljust(8, b'\x00')
 
@@ -17,6 +21,7 @@ def _username(bs):
     return bs.ljust(15, b'\x00')
 
 MAX_USERS = 20
+MAX_TWEETS = 100
 
 class UserRecord(abi.NamedTuple):
     nick: abi.Field[Nickname]
@@ -225,9 +230,12 @@ def demo_checker():
 
 # Create a class, subclassing Application from beaker
 class AlgoBlog(Application):
+    timestamps = List(Timestamp, MAX_TWEETS)
+
     @external
     def init(self, nick: Nickname, username: Username, *, output: abi.String):
         return Seq(
+            Pop(self.timestamps.create()),
             App.box_put(Bytes("nick"), nick.get()),
             App.box_put(Bytes("username"), username.get()),
             output.set(username.get())
@@ -276,11 +284,33 @@ class AlgoBlog(Application):
         )
 
     @external
-    def post_tweet(self, tweet: abi.String, *, output: abi.String):
+    def get_tweet_timestamp(self, idx: abi.Uint64, *, output: Timestamp):
+        return Seq(
+            # NOT self.timestamps[idx.get()].store_into(output)
+            output.set(Btoi(self.timestamps[idx.get()]))
+            # output.set(App.globalGet(Bytes("tstamp"))),
+        )
+
+    @external
+    def post_tweet(self, tstamp: Timestamp, tweet: abi.String, *, output: abi.String):
         # TODO new box instead of box_put
         return Seq(
             last := App.box_get(Bytes("idLast")),
             Assert(last.hasValue()),
+            # (now := Global.latest_timestamp()),
+            # Assert(Gt(now, tstamp.get())),
+            # Assert(now < tstamp.get()),
+            Assert(tstamp.get() > Global.latest_timestamp()),
+
+            # FAILS: AttributeError: 'Global' object has no attribute 'encode'
+            # self.timestamps[Btoi(last.value())].set((Bytes('12345678'))),
+            # self.timestamps[Btoi(last.value())].set(now),
+            # self.timestamps[Btoi(last.value())].set(foo), # foo: abi.Uint64 works
+            self.timestamps[Btoi(last.value())].set(tstamp), # idx = id - 1
+
+            # need storage when creating contract
+            # App.globalPut(Bytes("tstamp"), Global.latest_timestamp()),
+            # App.globalPut is PyTeal code, and ApplicationStateValue is its equivalent in Beaker. Additionally, you would want to use AccountStateValue in Beaker rather than PyTeal's App.localPut.
             App.box_put(Bytes("idLast"), SetByte(Bytes("_"), Int(0), (Int(1) + Btoi(last.value())) % Int(10) ) ) ,
             App.box_put(SetByte(Bytes("id:?"), Int(3), Int(0x30) + (Int(1) + Btoi(last.value())) % Int(10)), tweet.get()),
             output.set(SetByte(Bytes("id:?"), Int(3), Int(0x30) + (Int(1) + Btoi(last.value())) % Int(10)))
@@ -290,6 +320,8 @@ def deploy_blog():
     deploy = 1
 
     if deploy:
+        # testnet, no token: https://testnet.algoexplorer.io/api-dev/v2
+
         # Create an Application client
         app_client = client.ApplicationClient(
             # Get sandbox algod client
@@ -381,7 +413,7 @@ def demo():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Deploy")
+    parser = argparse.ArgumentParser(description="Commands for AlgoBlog and AlgoBlogRegistry")
     parser.add_argument("function", choices=["deploy_registry", "deploy_blog", "init_blog", "tweet", "lastId", "get_tweet", "register"], help="Commands")
     parser.add_argument("--app_id", type=int, help="App ID to call")
     parser.add_argument("--blog_app_id", type=int, help="App ID of AlgoBlog to register") 
@@ -396,6 +428,7 @@ if __name__ == "__main__":
     elif args.function == "deploy_blog":
         app_client = deploy_blog()
         print("- app_id: ", app_client.app_id)
+        print("Next you should: init_blog --app_id", app_client.app_id)
 
     elif args.function == 'init_blog':
         app_client = client.ApplicationClient(
@@ -406,12 +439,13 @@ if __name__ == "__main__":
             signer=sandbox.get_accounts().pop().signer,
         )
         boxen = lambda x: [[app_client.app_id, name] for name in x]
-        result = app_client.call(AlgoBlog.init, boxes=boxen(["username", "nick"]),
+        result = app_client.call(AlgoBlog.init, boxes=boxen(["username", "nick", "timestamps"]),
                             nick=_nick(b'tomo'), username=_username(b'tomo'))
         print("created account: ", result.return_value) 
         result = app_client.call(AlgoBlog.get_nick, boxes=boxen(["nick"]))
         print("Confirm nick set: ", result.return_value)
         result = app_client.call(AlgoBlog.idLast_reset, boxes=boxen(["idLast"]))
+        print("Next you should: tweet --app_id {} --txt '1st tweet' --post_id 1".format(app_client.app_id))
 
     elif args.function == 'lastId':
         # curl -s http://localhost:4001/v2/applications/1501/box?application-id=1501\&name=str:idLast -H "X-Algo-API-Token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" | jq -r .value | base64 -d | hexdump
@@ -431,6 +465,9 @@ if __name__ == "__main__":
         print("next: ", idNext)
 
     elif args.function == 'tweet':
+        print("posting tweet:", args.post_id)
+        if not args.post_id:
+            raise Exception("no post_id")
         app_client = client.ApplicationClient(
             client=sandbox.get_algod_client(),
             app=AlgoBlog(version=8),
@@ -439,8 +476,10 @@ if __name__ == "__main__":
             signer=sandbox.get_accounts().pop().signer,
         )
         boxen = lambda x: [[app_client.app_id, name] for name in x]
-        result = app_client.call(AlgoBlog.post_tweet, boxes=[[app_client.app_id, "idLast"], [app_client.app_id, "id:" + str(args.post_id)]], tweet=args.txt)
+        result = app_client.call(AlgoBlog.post_tweet, boxes=boxen(["idLast", "id:" + str(args.post_id), "timestamps"]), tweet=args.txt, tstamp=int(time.time())+60)
+        # result = app_client.call(AlgoBlog.post_tweet, boxes=[[app_client.app_id, "idLast"], [app_client.app_id, "id:" + str(args.post_id)]], tweet=args.txt)
         print("Resulting id tweet: ", result.return_value)
+        print("Next you should: get_tweet --app_id {} --post_id 1".format(app_client.app_id))
     
     elif args.function == 'get_tweet':
         # curl -s http://localhost:4001/v2/applications/1501/box?application-id=1501\&name=str:id:1 -H "X-Algo-API-Token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" | jq -r .value | base64 -d
@@ -454,6 +493,9 @@ if __name__ == "__main__":
         boxen = lambda x: [[app_client.app_id, name] for name in x]
         result = app_client.call(AlgoBlog.get_tweet, boxes=[[app_client.app_id, "idLast"], [app_client.app_id, "id:" + str(args.post_id)]], id=str(args.post_id))
         print("tweet: ", result.return_value)
+        result = app_client.call(AlgoBlog.get_tweet_timestamp, boxes=[[app_client.app_id, "timestamps"]], idx=0)
+        # result = app_client.call(AlgoBlog.get_tweet_timestamp, boxes=[[app_client.app_id, "timestamps"]], idx=args.post_id)
+        print("tweet tstamp: ", result.return_value)
 
     elif args.function == 'register':
         app_client = client.ApplicationClient(
