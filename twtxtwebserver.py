@@ -1,12 +1,22 @@
 import base64
 import datetime
 import http.server
+import os
 import requests
 import ssl
 
+# sandbox
 TOKEN = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 APP_ID = 1745
-API = 'http://localhost:4001/v2'
+API = 'http://localhost:4001/'
+
+# testnet
+APP_ID = 156806034
+algod_address = "https://testnet-algorand.api.purestake.io/ps2"
+API = algod_address
+algod_token = os.environ["ALGOD_TOKEN"]
+TOKEN = algod_token
+
 LISTEN = ('0.0.0.0', 4443)
 USESSL = False # Error: self signed certificate
 
@@ -18,8 +28,10 @@ def base64_decode(encoded_str):
 
 def get_url_json_value(url):
     header = {
-        "X-Algo-API-Token": TOKEN
+        "X-Algo-API-Token": TOKEN,
+        "x-api-key": TOKEN
     }
+    print(url)
     response = requests.get(url, headers=header)
     if response.status_code == 200:
         data = response.json()
@@ -48,15 +60,15 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(f"<html><body><p>This is not the page you are looking for.</p></body></html>".encode())
             return
 
-        lastId = get_url_json_value("{}/applications/{}/box?application-id={}&name=str:idLast".format(API, APP_ID, APP_ID))
+        lastId = get_url_json_value("{}/v2/applications/{}/box?application-id={}&name=str:idLast".format(API, APP_ID, APP_ID))
         lastId = int(lastId[0])
         # print('lastId is ', lastId)
 
         id = 1
         out = b''
         while id <= lastId:
-            tweet = get_url_json_value("{}/applications/{}/box?application-id={}&name=str:id:{}".format(API, APP_ID, APP_ID, id))
-            tstamps = get_url_json_value("{}/applications/{}/box?application-id={}&name=str:timestamps".format(API, APP_ID, APP_ID))
+            tweet = get_url_json_value("{}/v2/applications/{}/box?application-id={}&name=str:id:{}".format(API, APP_ID, APP_ID, id))
+            tstamps = get_url_json_value("{}/v2/applications/{}/box?application-id={}&name=str:timestamps".format(API, APP_ID, APP_ID))
             tstamp = int.from_bytes(tstamps[(id-1)*8:id*8], 'big')
             now = datetime.datetime.fromtimestamp(tstamp).strftime("%Y-%m-%dT%H:%M:%S%z")
             # now = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z")
