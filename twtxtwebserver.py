@@ -5,17 +5,21 @@ import os
 import requests
 import ssl
 
-# sandbox
-TOKEN = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-APP_ID = 1745
-API = 'http://localhost:4001/'
-
+if 'SANDBOX' in os.environ and os.environ['SANDBOX'] == '1':
+    # sandbox
+    TOKEN = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    APP_ID = 1745
+    API = 'http://localhost:4001'
+else:
 # testnet
-APP_ID = 156806034
-algod_address = "https://testnet-algorand.api.purestake.io/ps2"
-API = algod_address
-algod_token = os.environ["ALGOD_TOKEN"]
-TOKEN = algod_token
+    APP_ID = 156806034
+    algod_address = "https://testnet-algorand.api.purestake.io/ps2"
+    API = algod_address
+    algod_token = os.environ["ALGOD_TOKEN"]
+    TOKEN = algod_token
+
+if 'ALGOBLOG_APP_ID' in os.environ:
+    APP_ID = os.environ["ALGOBLOG_APP_ID"]
 
 LISTEN = ('0.0.0.0', 4443)
 USESSL = False # Error: self signed certificate
@@ -31,7 +35,7 @@ def get_url_json_value(url):
         "X-Algo-API-Token": TOKEN,
         "x-api-key": TOKEN
     }
-    print(url)
+    # print(url)
     response = requests.get(url, headers=header)
     if response.status_code == 200:
         data = response.json()
@@ -72,7 +76,7 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             tstamp = int.from_bytes(tstamps[(id-1)*8:id*8], 'big')
             now = datetime.datetime.fromtimestamp(tstamp).strftime("%Y-%m-%dT%H:%M:%S%z")
             # now = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z")
-            print("debug: tweet#{}: {}".format(id, tweet))
+            # print("debug: tweet#{}: {}".format(id, tweet))
             s = f"{now}\t{tweet.decode('ascii')}\n"
             # self.wfile.write(s.encode()) # gather output to calc content len
             out = out + s.encode()
