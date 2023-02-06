@@ -6,7 +6,7 @@ from beaker.application import get_method_signature
 from algosdk.encoding import decode_address, encode_address
 from algosdk.v2client import algod
 from algosdk.atomic_transaction_composer import AccountTransactionSigner
-from algosdk import account, mnemonic
+from algosdk import mnemonic
 
 from pprint import pprint
 import argparse
@@ -452,6 +452,7 @@ if __name__ == "__main__":
     if args.function == "deploy_registry":
         app_client = deploy_registry()
         print("- app_id: ", app_client.app_id)
+        print("Next you should: register --app_id {} --nick ABCDEFGH --username username15chars".format(app_client.app_id))
     elif args.function == "deploy_blog":
         app_client = deploy_blog()
         print("- app_id: ", app_client.app_id)
@@ -525,6 +526,13 @@ if __name__ == "__main__":
         print("tweet tstamp: ", result.return_value)
 
     elif args.function == 'register':
+        nick = args.nick
+        if len(nick) < 1 or len(nick) > 8:
+            raise Exception("nick must be 1-8 chars")
+        username = args.username
+        if len(username) < 1 or len(username) > 8:
+            raise Exception("username must be 1-8 chars")
+            
         app_client = client.ApplicationClient(
             client=algod_client,
             app=AlgoBlogRegistry(version=8),
